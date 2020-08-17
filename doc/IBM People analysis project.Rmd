@@ -1,0 +1,401 @@
+---
+title: "IBM People Analysis Project"
+author: "Huizhe Zhu"
+date: "4/27/2020"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+### Step 1 Import clean data, install packages
+```{r pressure, echo=TRUE}
+# install packages
+# flexclust
+
+# read data
+data = read.csv('C:/Users/Huizhe ZHU/Desktop/IBM project/Clean data.csv')
+
+# EDA
+head(data)  # 1470 obs. of  32 variables
+table(data$Attrition)  # 1233 no, 237 yes
+```
+
+### Step 2 Feature Selection
+We here use correlation and HR domain knowledge to select variables and exclude the variables that are highly correlated. 
+
+**High Correlation Variable Pairs:**
+- Job level & monthly income: 0.95
+- Job level & total working years: 0.78
+- Age & total working years: 0.68
+- Years at company & years since last promotion & years with current manager & years at current role 
+
+*Consider to remove:*
+- Job level: chose between Job level & monthly income, because Job level also has high correlation with total working years
+- Age: has high correlation with total working years
+- Years at current role: not significant weight in model
+- Years at company:not significant weight in model
+
+correlation plot
+```{r eval=FALSE} 
+library(corrplot)
+library(RColorBrewer)
+## (1) remove attrition 
+dataMinusDV = subset(data, select = -c(Attrition))
+## (2) normalize data
+preproc_data = preProcess(dataMinusDV)
+dataNorm = predict(preproc_data, dataMinusDV)
+## (3) convert train data to numeric
+dataNumeric = lapply(dataNorm, as.numeric)
+dataNumeric = as.data.frame(dataNumeric)
+M <-cor(dataNumeric)
+corrplot(M, type="upper", order="hclust",
+         col=brewer.pal(n=8, name="RdYlBu"))
+
+```
+
+
+heatmap
+```{r eval=FALSE}
+col<- colorRampPalette(c("blue", "white", "red"))(40)
+heatmap(x = M, col = col, symm = TRUE)
+```
+
+*Consider to remove:*
+- Job level: chose between Job level & monthly income, because Job level also has high correlation with total working years
+- Age: has high correlation with total working years
+- Years at current role: not significant weight in model
+- Years at company:not significant weight in model
+
+
+*remove the 4 identified variables from the dataset*
+```{r}
+class(data)
+data = subset(data, select=-c(JobLevel, Age,YearsInCurrentRole, YearsAtCompany))
+
+```
+
+
+
+
+### Step 3 Compare models with/without clustering observations
+
+After feature selection, we are ready to select the suitable models to fit the data. We do not know the effect of clutering on this dataset yet, so we will fit data on both the dataset and clustered subset, compare their result then conclude the most suitable method. 
+
+### Step 3.0 Split data 
+```{r}
+library(caret)
+set.seed(427)
+split = createDataPartition(y=data$Attrition, p=0.8, list = F)
+train = data[split,]
+test = data[-split,]
+```
+
+
+### Step 3.1 cluster
+We use k means to clutser to ensure training set and testing set are split by the same method. 
+
+#### Step 3.1.1 Choose the number of clusters
+We choose the number of centers by the total within sum of squares plot, according to the graph, the number of clusters can be both 2 or 3. 
+```{r, echo=TRUE}
+## (1) prepare the data for clustering:remove attrition 
+trainMinusDV = subset(train, select = -c(Attrition))
+testMinusDV = subset(test, select = -c(Attrition))
+## (2) normalize data
+preproc = preProcess(trainMinusDV)
+trainNorm = predict(preproc, trainMinusDV)
+testNorm = predict(preproc, testMinusDV)
+
+## (3) convert train data to numeric
+TrainNumeric = lapply(trainNorm, as.numeric)
+TrainNumeric = as.data.frame(TrainNumeric)
+
+TestNumeric = lapply(testNorm, as.numeric)
+TestNumeric = as.data.frame(TestNumeric)
+
+## plot Total within sum of squares Plot
+within_ss = sapply(1:10,FUN = function(x){
+  set.seed(617)
+  kmeans(x = TrainNumeric,centers = x,iter.max = 1000,nstart = 25)$tot.withinss})
+ggplot(data=data.frame(cluster = 1:10,within_ss),aes(x=cluster,y=within_ss))+
+  geom_line(col='steelblue',size=1.2)+
+  geom_point()+
+  scale_x_continuous(breaks=seq(1,10,1))   # k = 3
+```
+
+To further decide the number of centers we will choose, we check profile cluster based on kmeans
+```{r}
+## (4) apply kmeans to train, centers = 3 
+km_3 = kmeans(TrainNumeric, centers = 3, iter.max = 10000, nstart = 100)
+k_segments = km_3$cluster
+prop.table(table(k_segments))
+
+## (5) # visualize result - personal information
+## combine normalized train data with segment
+train_cbind = cbind(trainNorm,k_segments)
+
+# note: use normalized data
+library(dplyr); library(ggplot2); library(tidyr)
+
+train_cbind %>%
+  select(c(Education,TotalWorkingYears,EnvironmentSatisfaction,JobInvolvement,MonthlyIncome, TotalWorkingYears,DistanceFromHome,WorkLifeBalance,YearsSinceLastPromotion,YearsWithCurrManager),k_segments)%>%
+  group_by(k_segments)%>%
+  summarize_all(function(x) round(mean(x,na.rm=T),2))%>%
+  gather(key = var,value = value,c(Education,TotalWorkingYears,EnvironmentSatisfaction,JobInvolvement,MonthlyIncome, TotalWorkingYears,DistanceFromHome,WorkLifeBalance,YearsSinceLastPromotion,YearsWithCurrManager))%>%
+ggplot(aes(x=var,y=value,fill=factor(k_segments)))+
+  geom_col(position='dodge')+
+  coord_flip()             
+```
+
+According to the graph, segment 2 is more different from segment 1 and 3. So we consider the situation of 2 clusters. 
+
+If we try centers = 2, cluster 1 accounts for 0.4970263 of total data, cluster 2 accounts for 50.2%. 2 clusters situation seems make more sense than 3 clusters situation. 
+```{r}
+# construct new kmeans model
+km_2 = kmeans(TrainNumeric, centers = 2, iter.max = 10000, nstart = 100)
+k_segments = km_2$cluster
+prop.table(table(k_segments))
+
+## combine normalized train data with segment
+train_cbind = cbind(trainNorm,k_segments)
+
+# note: use normalized data
+library(dplyr); library(ggplot2); library(tidyr)
+
+train_cbind %>%
+  select(c(Education,TotalWorkingYears,EnvironmentSatisfaction,JobInvolvement,MonthlyIncome, TotalWorkingYears,DistanceFromHome,YearsSinceLastPromotion,YearsWithCurrManager),k_segments)%>%
+  group_by(k_segments)%>%
+  summarize_all(function(x) round(mean(x,na.rm=T),2))%>%
+  gather(key = var,value = value, c(Education,TotalWorkingYears,EnvironmentSatisfaction,JobInvolvement,MonthlyIncome, TotalWorkingYears,DistanceFromHome,YearsSinceLastPromotion,YearsWithCurrManager))%>%
+ggplot(aes(x=var,y=value,fill=factor(k_segments)))+
+  geom_col(position='dodge')+
+  coord_flip()
+
+```
+
+
+To summarize, we will use 2 clusters, and choose models to fit each cluster in training and testing set.
+- cluster 1 training set: fit model
+- cluster 2 training set: fit model
+- cluster 1 testing set: evaluate performance
+- cluster 2 testing set: evaluate performance
+
+#### Step 3.1.2 apply clustering solution from train to test set
+```{r}
+# applying clustering solution from train to test set
+# install.package('flexclust')
+library(flexclust)
+km_kcca = as.kcca(km_2,TrainNumeric) # flexclust uses objects of the classes kcca
+clusterTrain = predict(km_kcca)
+clusterTest = predict(km_kcca,newdata=TestNumeric)
+
+table(clusterTrain) 
+table(clusterTest)
+```
+
+
+
+
+#### Step 3.1.3 Split train and test based on cluster membership
+```{r}
+train1 = subset(train,clusterTrain==1)
+train2 = subset(train,clusterTrain==2)
+test1 = subset(test,clusterTest==1)
+test2 = subset(test,clusterTest==2)
+```
+
+
+We want to see attrition rate in train 1 and train 2, in other words cluster 1 and cluster 2.
+The attrition for employees with less work experience and salary is slightly higher than the higher level employees. 
+```{r}
+prop.table(table(train1$Attrition))
+prop.table(table(train2$Attrition))
+```
+
+
+### Step 3.2 Choose model
+#### Step 3.2.1 Logistics model
+```{r error=TRUE}
+# predict for each cluster then combine 
+logistic1_kmeans = glm(Attrition~.,data=train1,family='binomial')
+logistic2_kmeans = glm(Attrition~.,data=train2,family='binomial')
+
+pred1 = predict(logistic1_kmeans, newdata = test1, type = 'response')
+pred2 = predict(logistic2_kmeans, newdata = test2, type = 'response') 
+
+p1 = predict(logistic1_kmeans, type = 'response')
+p2 = predict(logistic2_kmeans, type = 'response')
+
+p_overall = c(pred1,pred2)
+
+```
+
+check summary for logistic model trained from cluster 1 training set
+- EnvironmentSatisfaction          
+- DistanceFromHome
+- OverTime
+- JobSatisfaction
+- WorkLifeBalance
+- YearsWithCurrManager
+```{r}
+# summary for significant variables for cluster 1: executives 
+summary(logistic1_kmeans)
+```
+
+check summary for logistic model trained cluster 2 training set
+- BusinessTravelTravel_Frequently
+- JobInvolvement 
+- JobSatisfaction
+- MaritalStatusSingle
+- NumCompaniesWorked               
+- OverTime
+- YearsSinceLastPromotion          
+
+```{r}
+# summary for significant variables for cluster 2: executives 
+summary(logistic2_kmeans)
+```
+
+
+### Step 3.2.2 Evaluation for logistic model
+We evaluate model's performance by AUC and F1 score. 
+
+```{r}
+## a. accuracy for test set
+predictions_test = as.integer(p_overall>0.5)  
+ct_kmeans = table(attrition = test$Attrition, predictions = as.integer(predictions_test>0.5))
+ct_kmeans
+
+accuracy_kmeans = sum(ct_kmeans[1,1],ct_kmeans[2,2])/nrow(test)
+accuracy_kmeans # 0.778157
+
+# b. AUC
+library(ROCR)
+# pred = predict(model2,newdata = test, type = 'response')
+ROCRpred = prediction(p_overall,test$Attrition)
+as.numeric(performance(ROCRpred,"auc")@y.values) #0.5101194
+```
+
+According to the classification matrix, the false negative rate is high, which is a problem in prediction. The sensitivity of the model is relatively low. 
+
+We also use AUC as measurement, which is a model performance measure that is independent of any particular cutoff or threshold. AUC of 0.51 indicates the model is not good. 
+
+
+#### Step 3.3.1 Random Forest 
+```{r}
+# predict for each cluster
+library(ranger)
+
+train1$Attrition=as.numeric(train1$Attrition)
+test1$Attrition=as.numeric(test1$Attrition)
+train2$Attrition=as.numeric(train2$Attrition)
+test2$Attrition=as.numeric(test2$Attrition)
+
+randomforest1 =ranger(Attrition~.,data=train1,num.trees=300,seed=427,classification = F,importance = 'impurity')
+randomforest2 = ranger(Attrition~.,data=train2,num.trees=300,seed=427,classification = F,importance = 'impurity')
+
+pred1_forest = predict(randomforest1, data = test1, type = 'response')
+pred2_forest = predict(randomforest2, data = test2, type = 'response') 
+
+pred1_forest = pred1_forest$predictions
+pred2_forest = pred2_forest$predictions
+p_overall_forest = c(pred1_forest, pred2_forest)
+
+```
+
+
+### Step 3.3.2 Evaluation for random forest
+```{r}
+## a. accuracy for test set
+p_overall_forest = as.integer(p_overall_forest>0.5)
+mean(p_overall_forest==test$Attrition) #0.8395904
+
+ct = table(attrition = test$Attrition, predictions = as.integer(p_overall_forest>0.5))
+ct
+
+# b. AUC
+library(ROCR)
+ROCRpred = prediction(p_overall_forest,test$Attrition)
+as.numeric(performance(ROCRpred,"auc")@y.values) # 0.5029839
+
+```
+
+To summarize, the model for clustering is not predictive, with an AUC around 0.5, for both logistic model (0.51) and random forest model (0.5029). 
+
+
+
+
+### Step 4.1 If not Cluster
+### Step 4.1 Logistic Regression
+```{r}
+train$Attrition=as.numeric(train$Attrition)-1
+test$Attrition=as.numeric(test$Attrition)-1
+model1=glm(Attrition~.,data=train,family=binomial)
+summary(model1)
+```
+
+
+### Evaluation of Logistic Regression without cluster
+Accuracy
+```{r}
+threshold=0.5
+prediction=ifelse(predict(model1,newdata=test,type='response')>threshold,1,0)
+mean(prediction==test$Attrition)
+```
+
+AUC:0.848
+```{r}
+library(ROCR)
+library(pROC)
+plot.roc(test$Attrition,predict(model1,newdata=test,type='response'),print.auc=T)
+```
+
+### Step 4.2 Random Forest
+```{r}
+library(ranger)
+
+model2=ranger(Attrition~.,data=train,num.trees=300,seed=427,classification = F,importance = 'impurity')
+summary(model2)
+```
+
+### Accuracy
+```{r}
+mean(test$Attrition==ifelse(predict(model2,data=test,type='response')$predictions>threshold,1,0))
+```
+
+### AUC
+AUC is 0.794. 
+```{r}
+plot.roc(test$Attrition,predict(model2,data=test,type='response')$predictions,print.auc=T)
+```
+
+
+
+
+
+### Step 5 Comparison between cluser & no clutser 
+
+Overall, logistic model without clustering performs better. 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
