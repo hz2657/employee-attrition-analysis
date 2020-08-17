@@ -31,16 +31,27 @@ For the dataset, logistic regression works best among models without clustering.
 The factors that decrease the likelihood of employees’ attrition are
 
 •	Environment Satisfaction   
+
 •	Job Involvement   
+
 •	Job Satisfaction   
-•	Years In Current Role        
+
+•	Years In Current Role    
+
 •	Relationship Satisfaction 
+
 •	Training Times Last Year   
+   
    
  The factors that increase the likelihood of employees’ attrition are
  
 •	Business Travel Frequently
+
 •	Work over time 
+
 •	Distance From Home  
+
 •	Marital Status Single  
-•	Years Since Last Promotion           
+
+•	Years Since Last Promotion        
+
