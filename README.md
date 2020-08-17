@@ -20,8 +20,6 @@ If use use k means to cluster employees to different groups, we choose the numbe
 -	group 1: employees with less work experience and income
 -	group 2: employees with more work experience and higher income
 
-<img src="graph/cluster result.png" alt="importance" width="700"/>
-
 
 
 
