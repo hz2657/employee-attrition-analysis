@@ -12,11 +12,23 @@ Created by IBM data scientists, the dataset contains 1471 employees’ informati
 The graph shows the importance of variables by random forest model.
 <img src="graph/random forest - importance.png" alt="importance" width="700"/>
 
-For the dataset, logistic regression works best among models without clustering. It has the highest accuracy and AUC
-<img src="graph/result.png" alt="importance" width="700"/>
+
+If use use k means to cluster employees to different groups, we choose the number of centers by the total within sum of squares plot, according to the graph, two groups is appropriate. 
+
+<img src="graph/the total within sum of squares plot.png" alt="importance" width="700"/>
+
+-	group 1: employees with less work experience and income
+-	group 2: employees with more work experience and higher income
+
+<img src="graph/cluster result.png" alt="importance" width="700"/>
+
+
+
 
 
 **Conclusion**
+
+For the dataset, logistic regression works best among models without clustering. It has the highest accuracy and AUC. However, we need to consider that the data is imbalanced, it is likely that there are no enough positive samples and models fail to learn from the training set. 
 
 The factors that decrease the likelihood of employees’ attrition are
 
