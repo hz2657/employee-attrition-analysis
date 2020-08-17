@@ -24,6 +24,9 @@ If use use k means to cluster employees to different groups, we choose the numbe
 
 
 
+
+
+
 **Conclusion**
 
 For the dataset, logistic regression works best among models without clustering. It has the highest accuracy and AUC. However, we need to consider that the data is imbalanced, it is likely that there are no enough positive samples and models fail to learn from the training set. 
